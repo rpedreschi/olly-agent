@@ -130,15 +130,15 @@ Copy `mcp_config.json` to your OpenAI Agent Builder MCP configuration location a
 
 The `suspend_principal` tool is a two-part integration:
 
-**OCI Function** — holds the IAM credentials and performs the actual suspension. When invoked, it adds the target principal to a zero-policy IAM group (no direct IAM API credentials live in the MCP server). Deploy it to OCI Functions and note the invoke URL.
+**Mock mode (no OCI Function required)** — set `MOCK_OCI_FUNCTION=true` in `mcp_config.json` (it ships enabled by default). The MCP server simulates a ~400ms OCI Function round trip and returns a realistic `confirmed` response. The Kafka write still happens, so `agent_actions_mv` updates live on screen exactly as it would in production — the audience sees the stream update in real time regardless. Switch to `false` and supply the two OCI vars below only when you want to wire up a real IAM suspension.
 
-The function should accept:
+**OCI Function (production only)** — holds the IAM credentials and adds the principal to a zero-policy IAM group. No IAM credentials live in the MCP server. The function should accept:
 ```json
 { "principal_id": "...", "reason": "...", "triggered_by": "..." }
 ```
-and add `principal_id` to a pre-created IAM group that has no policies attached (the zero-policy group). Return a JSON body with at minimum a `status` field.
+and return a JSON body confirming the operation.
 
-**suspend_principal MCP server** (`suspend_principal_mcp/`) — a Node.js MCP server that bridges the agent to the OCI Function and the audit stream. Install and start it:
+**suspend_principal MCP server** (`suspend_principal_mcp/`) — a Node.js MCP server that bridges the agent to the OCI Function (or the mock) and the audit stream. Install it:
 
 ```bash
 cd suspend_principal_mcp

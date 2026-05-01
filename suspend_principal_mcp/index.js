@@ -16,21 +16,24 @@ const {
   KAFKA_SASL_USERNAME,
   KAFKA_SASL_PASSWORD,
   AGENT_ACTIONS_TOPIC = 'mcp_agent_actions',
+  MOCK_OCI_FUNCTION = 'false',
 } = process.env;
 
-const REQUIRED = {
-  OCI_SUSPEND_FUNCTION_ENDPOINT,
-  OCI_FUNCTION_AUTH_TOKEN,
-  KAFKA_BOOTSTRAP,
-  KAFKA_SASL_USERNAME,
-  KAFKA_SASL_PASSWORD,
-};
+const MOCK_MODE = MOCK_OCI_FUNCTION === 'true';
+
+const REQUIRED = MOCK_MODE
+  ? { KAFKA_BOOTSTRAP, KAFKA_SASL_USERNAME, KAFKA_SASL_PASSWORD }
+  : { OCI_SUSPEND_FUNCTION_ENDPOINT, OCI_FUNCTION_AUTH_TOKEN, KAFKA_BOOTSTRAP, KAFKA_SASL_USERNAME, KAFKA_SASL_PASSWORD };
 
 for (const [name, val] of Object.entries(REQUIRED)) {
   if (!val) {
     process.stderr.write(`Missing required environment variable: ${name}\n`);
     process.exit(1);
   }
+}
+
+if (MOCK_MODE) {
+  process.stderr.write('suspend-principal MCP: running in MOCK mode — OCI Function calls are simulated\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -56,11 +59,29 @@ await producer.connect();
 // ---------------------------------------------------------------------------
 // OCI Function call
 //
-// The function holds the IAM credentials and adds the principal to the
-// restricted-access group. No IAM API credentials live here.
+// In production: POSTs to the OCI Function endpoint. The function holds the
+// IAM credentials and adds the principal to the restricted-access group.
+//
+// In mock mode (MOCK_OCI_FUNCTION=true): simulates a ~400ms round trip and
+// returns a realistic confirmed response. The Kafka write still happens, so
+// agent_actions_mv updates live exactly as it would in production.
 // ---------------------------------------------------------------------------
 
 async function callOciFunction(principal_id, reason, triggered_by) {
+  if (MOCK_MODE) {
+    await new Promise((r) => setTimeout(r, 400));
+    return {
+      ok: true,
+      statusCode: 200,
+      body: JSON.stringify({
+        message: 'Principal added to restricted-access group (simulated)',
+        principal_id,
+        iam_group: 'restricted-access',
+        operation_id: randomUUID(),
+      }),
+    };
+  }
+
   const res = await fetch(OCI_SUSPEND_FUNCTION_ENDPOINT, {
     method: 'POST',
     headers: {
