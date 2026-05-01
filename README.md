@@ -22,6 +22,9 @@ oci_logging_agent/
 ├── 04_materialized_views.sql             # Create agent-queryable views + set descriptions
 ├── 05_agent_actions_stream.sql           # Agent audit stream + view for suspend_principal actions
 ├── mcp_config.json                       # MCP server configuration (DeltaStream + suspend_principal)
+├── suspend_principal_mcp/
+│   ├── package.json                      # Node.js dependencies
+│   └── index.js                          # MCP server: calls OCI Function + writes to agent_actions
 └── connector_hub_setup.md               # Step-by-step Connector Hub configuration guide
 ```
 
@@ -129,10 +132,25 @@ The `suspend_principal` tool is a two-part integration:
 
 **OCI Function** — holds the IAM credentials and performs the actual suspension. When invoked, it adds the target principal to a zero-policy IAM group (no direct IAM API credentials live in the MCP server). Deploy it to OCI Functions and note the invoke URL.
 
-**suspend_principal MCP server** (`suspend_principal_mcp/index.js`) — a lightweight Node.js MCP server that:
-1. Accepts a `suspend_principal` tool call from the agent
-2. Calls the OCI Function endpoint with `principal_id`, `reason`, and `triggered_by`
-3. Writes the result as a record to the `mcp_agent_actions` Kafka topic so it appears in `agent_actions_mv`
+The function should accept:
+```json
+{ "principal_id": "...", "reason": "...", "triggered_by": "..." }
+```
+and add `principal_id` to a pre-created IAM group that has no policies attached (the zero-policy group). Return a JSON body with at minimum a `status` field.
+
+**suspend_principal MCP server** (`suspend_principal_mcp/`) — a Node.js MCP server that bridges the agent to the OCI Function and the audit stream. Install and start it:
+
+```bash
+cd suspend_principal_mcp
+npm install
+# env vars are passed by the MCP host via mcp_config.json — no manual export needed
+```
+
+What it does on each tool call:
+1. Calls the OCI Function endpoint with `principal_id`, `reason`, and `triggered_by`
+2. Records the outcome (confirmed / failed) plus the raw OCI response
+3. Writes the full action record to the `mcp_agent_actions` Kafka topic so it appears in `agent_actions_mv`
+4. Returns the record to the agent so it can confirm the action and quote the result
 
 The tool schema the agent sees:
 
