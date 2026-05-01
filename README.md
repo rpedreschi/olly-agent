@@ -25,6 +25,10 @@ oci_logging_agent/
 ├── suspend_principal_mcp/
 │   ├── package.json                      # Node.js dependencies
 │   └── index.js                          # MCP server: calls OCI Function + writes to agent_actions
+├── demo_dashboard/
+│   ├── package.json                      # Node.js dependencies (kafkajs only)
+│   ├── server.js                         # SSE server: tails Kafka, broadcasts to browser
+│   └── public/index.html                 # Single-page live dashboard (no build step)
 └── connector_hub_setup.md               # Step-by-step Connector Hub configuration guide
 ```
 
@@ -168,7 +172,26 @@ The tool schema the agent sees:
 
 ---
 
-### 6. Create your agent in OpenAI Agent Builder
+### 6. Start the live demo dashboard
+
+The dashboard tails `mcp_agent_actions` and the `mcp-oci-audit` anomaly feed and pushes events to the browser via SSE. No page refresh needed — new cards slide in as they arrive.
+
+```bash
+cd demo_dashboard
+npm install
+KAFKA_BOOTSTRAP=<OCI_KAFKA_BOOTSTRAP> \
+KAFKA_SASL_USERNAME=<OCI_KAFKA_USERNAME> \
+KAFKA_SASL_PASSWORD=<OCI_KAFKA_PASSWORD> \
+node server.js
+```
+
+Then open `http://localhost:3000` — put it on the right half of your screen alongside the agent conversation.
+
+**Left panel — Suspicious Activity:** 4xx and 5xx audit events arrive here in real time, building the case the agent is investigating.
+
+**Right panel — Agent Actions:** when the agent calls `suspend_principal`, a new card flashes green within 2–3 seconds, independently of the agent's own confirmation message. That's the point.
+
+### 7. Create your agent in OpenAI Agent Builder
 
 1. Go to [platform.openai.com/agents](https://platform.openai.com/agents)
 2. Create a new agent
