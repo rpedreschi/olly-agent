@@ -4,8 +4,6 @@ This repo contains everything you need to build a real-time AI agent on top of O
 
 The companion blog post and demo video walk through the architecture and show the agent in action. This repo is the code behind them.
 
-> **New to DeltaStream?** You'll need a trial account to run this. Request access at [deltastream.io/contact-us](https://www.deltastream.io/contact-us) — the team typically responds quickly and the trial gives you full access to everything used here: streaming SQL, materialized views, and the built-in MCP server.
-
 **Architecture:**
 ```
 OCI Logging → Connector Hub → OCI Streaming → DeltaStream → MCP → AI Agent
@@ -16,17 +14,14 @@ OCI Logging → Connector Hub → OCI Streaming → DeltaStream → MCP → AI A
 ## What's in this repo
 
 ```
-.
-├── .env.example                          # Credential placeholders — copy to .env
-├── .gitignore
-├── deltastream/
-│   ├── 01_store.sql                      # Connect DeltaStream to OCI Streaming
-│   ├── 02_raw_streams.sql                # Define raw input streams from Connector Hub topics
-│   ├── 03_enriched_streams.sql           # Transform and enrich raw events
-│   ├── 04_materialized_views.sql         # Create agent-queryable views + set descriptions
-│   └── mcp_config.json                   # DeltaStream MCP server configuration
-└── docs/
-    └── connector_hub_setup.md            # Step-by-step Connector Hub configuration guide
+oci_logging_agent/
+├── env.example                           # Credential placeholders — copy to .env
+├── 01_store.sql                          # Connect DeltaStream to OCI Streaming
+├── 02_raw_streams.sql                    # Define raw input streams from Connector Hub topics
+├── 03_enriched_streams.sql               # Transform and enrich raw events
+├── 04_materialized_views.sql             # Create agent-queryable views + set descriptions
+├── mcp_config.json                       # DeltaStream MCP server configuration
+└── connector_hub_setup.md               # Step-by-step Connector Hub configuration guide
 ```
 
 ---
@@ -34,7 +29,7 @@ OCI Logging → Connector Hub → OCI Streaming → DeltaStream → MCP → AI A
 ## Prerequisites
 
 - An OCI tenancy with OCI Logging enabled (audit logs and/or service logs)
-- A **DeltaStream trial account** — request access at [deltastream.io/contact-us](https://www.deltastream.io/contact-us). The trial gives you full access to everything used in this demo including streaming SQL, materialized views, and the built-in MCP server.
+- A DeltaStream account — see [Resources](#resources) below for how to get access
 - An OpenAI account with access to Agent Builder
 - Node.js 18+ (for the DeltaStream MCP server)
 
@@ -46,8 +41,8 @@ OCI Logging → Connector Hub → OCI Streaming → DeltaStream → MCP → AI A
 
 ```bash
 git clone https://github.com/deltastreaminc/examples.git
-cd examples/oci-realtime-agent
-cp .env.example .env
+cd examples/oci_logging_agent
+cp env.example .env
 ```
 
 Open `.env` and fill in your values:
@@ -58,7 +53,7 @@ Open `.env` and fill in your values:
 | `OCI_STREAM_POOL_OCID` | OCI Console → Streaming → Stream Pools → your pool |
 | `OCI_SASL_USERNAME` | Format: `<tenancy>/<username>/<stream_pool_ocid>` |
 | `OCI_AUTH_TOKEN` | OCI Console → Profile (top right) → Auth Tokens → Generate Token |
-| `DELTASTREAM_TOKEN` | DeltaStream Console → Settings → API Tokens |
+| `DELTASTREAM_TOKEN` | DeltaStream Console → Integrations → API Tokens |
 | `OPENAI_API_KEY` | platform.openai.com → API Keys |
 
 ---
@@ -67,7 +62,7 @@ Open `.env` and fill in your values:
 
 Connector Hub routes your OCI Logging events into OCI Streaming topics with no code required.
 
-See **[docs/connector_hub_setup.md](docs/connector_hub_setup.md)** for a step-by-step walkthrough.
+See **[connector_hub_setup.md](connector_hub_setup.md)** for a step-by-step walkthrough.
 
 You will create two service connectors:
 - **Audit logs** → OCI Streaming topic (set `OCI_AUDIT_TOPIC` in your `.env`)
@@ -81,7 +76,7 @@ Run the scripts in order using the DeltaStream console or CLI. Each script build
 
 ```sql
 -- In the DeltaStream console, run each file in order:
--- 01_store.sql             → creates TWO stores (see below)
+-- 01_store.sql             → creates two stores (see below)
 -- 02_raw_streams.sql       → defines input streams on your Connector Hub topics
 -- 03_enriched_streams.sql  → transforms raw events into clean, enriched streams
 -- 04_materialized_views.sql  → creates agent-queryable views with descriptions
@@ -100,13 +95,13 @@ Both are in `01_store.sql`. Replace the placeholders in each with the correspond
 - `<OCI_AUDIT_TOPIC>` → the topic name you configured in Connector Hub
 - `<OCI_LOGGING_TOPIC>` → the topic name you configured in Connector Hub
 
-> **Tip:** After running `04_materialized_views.sql`, give the views a minute to backfill before querying. The `starting.position = 'earliest'` setting will process historical events first, then stay current.
+> **Tip:** After running `04_materialized_views.sql`, give the views a minute to backfill before querying. The `starting.position = 'earliest'` setting will process historical events first, then stay current. You can remove this if you do NOT want backfill.
 
 ---
 
 ### 4. Configure the MCP server
 
-Copy `deltastream/mcp_config.json` to your OpenAI Agent Builder MCP configuration location and fill in your values:
+Copy `mcp_config.json` to your OpenAI Agent Builder MCP configuration location and fill in your values:
 
 | Placeholder | Value |
 |---|---|
@@ -183,9 +178,9 @@ The architecture is the same regardless of what you put in the streams.
 ## Resources
 
 - [DeltaStream Documentation](https://docs.deltastream.io)
+- [DeltaStream — get in touch if you'd like access](https://www.deltastream.io/contact-us)
 - [OCI Streaming for Apache Kafka](https://docs.oracle.com/en-us/iaas/Content/Streaming/Tasks/kafkacompatibility.htm)
 - [OCI Connector Hub Documentation](https://docs.oracle.com/en-us/iaas/Content/connector-hub/overview.htm)
 - [OpenAI Agent Builder](https://platform.openai.com/agents)
 - [Blog post — companion to this repo](#)
 - [Demo video](#)
-# olly-agent
