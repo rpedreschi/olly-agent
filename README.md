@@ -20,7 +20,8 @@ oci_logging_agent/
 ├── 02_raw_streams.sql                    # Define raw input streams from Connector Hub topics
 ├── 03_enriched_streams.sql               # Transform and enrich raw events
 ├── 04_materialized_views.sql             # Create agent-queryable views + set descriptions
-├── mcp_config.json                       # DeltaStream MCP server configuration
+├── 05_agent_actions_stream.sql           # Agent audit stream + view for suspend_principal actions
+├── mcp_config.json                       # MCP server configuration (DeltaStream + suspend_principal)
 └── connector_hub_setup.md               # Step-by-step Connector Hub configuration guide
 ```
 
@@ -76,10 +77,11 @@ Run the scripts in order using the DeltaStream console or CLI. Each script build
 
 ```sql
 -- In the DeltaStream console, run each file in order:
--- 01_store.sql             → creates two stores (see below)
--- 02_raw_streams.sql       → defines input streams on your Connector Hub topics
--- 03_enriched_streams.sql  → transforms raw events into clean, enriched streams
+-- 01_store.sql               → creates two stores (see below)
+-- 02_raw_streams.sql         → defines input streams on your Connector Hub topics
+-- 03_enriched_streams.sql    → transforms raw events into clean, enriched streams
 -- 04_materialized_views.sql  → creates agent-queryable views with descriptions
+-- 05_agent_actions_stream.sql → creates the agent audit stream and materialized view
 ```
 
 **Why two stores?** OCI has two distinct Kafka-compatible streaming services with different auth patterns:
@@ -101,7 +103,9 @@ Both are in `01_store.sql`. Replace the placeholders in each with the correspond
 
 ### 4. Configure the MCP server
 
-Copy `mcp_config.json` to your OpenAI Agent Builder MCP configuration location and fill in your values:
+Copy `mcp_config.json` to your OpenAI Agent Builder MCP configuration location and fill in your values.
+
+**DeltaStream MCP server** (read-only — audit, logging, and agent action views):
 
 | Placeholder | Value |
 |---|---|
@@ -109,24 +113,61 @@ Copy `mcp_config.json` to your OpenAI Agent Builder MCP configuration location a
 | `<YOUR_DATABASE_NAME>` | The DeltaStream database containing your views |
 | `<YOUR_SCHEMA_NAME>` | The DeltaStream schema containing your views |
 
+**suspend-principal MCP server** (write — see step 5 below):
+
+| Placeholder | Value |
+|---|---|
+| `<YOUR_OCI_FUNCTION_ENDPOINT>` | Invoke URL of the OCI Function that performs the IAM suspension |
+| `<YOUR_OCI_FUNCTION_AUTH_TOKEN>` | Auth token for calling the OCI Function endpoint |
+| `<OCI_KAFKA_BOOTSTRAP>` | Same bootstrap server used in `01_store.sql` for `oci_streaming_kafka` |
+| `<OCI_KAFKA_USERNAME>` | Same SCRAM-SHA-512 username used in `01_store.sql` |
+| `<OCI_KAFKA_PASSWORD>` | Same SCRAM-SHA-512 password used in `01_store.sql` |
+
+### 5. Deploy the suspend_principal OCI Function and MCP tool
+
+The `suspend_principal` tool is a two-part integration:
+
+**OCI Function** — holds the IAM credentials and performs the actual suspension. When invoked, it adds the target principal to a zero-policy IAM group (no direct IAM API credentials live in the MCP server). Deploy it to OCI Functions and note the invoke URL.
+
+**suspend_principal MCP server** (`suspend_principal_mcp/index.js`) — a lightweight Node.js MCP server that:
+1. Accepts a `suspend_principal` tool call from the agent
+2. Calls the OCI Function endpoint with `principal_id`, `reason`, and `triggered_by`
+3. Writes the result as a record to the `mcp_agent_actions` Kafka topic so it appears in `agent_actions_mv`
+
+The tool schema the agent sees:
+
+```json
+{
+  "name": "suspend_principal",
+  "description": "Suspends an OCI principal by adding them to the restricted-access group. Use when a principal is confirmed to be the source of anomalous or unauthorized activity.",
+  "parameters": {
+    "principal_id": "string",
+    "reason": "string",
+    "triggered_by": "string"
+  }
+}
+```
+
 ---
 
-### 5. Create your agent in OpenAI Agent Builder
+### 6. Create your agent in OpenAI Agent Builder
 
 1. Go to [platform.openai.com/agents](https://platform.openai.com/agents)
 2. Create a new agent
 3. Set the system prompt (see below)
-4. Add DeltaStream as an MCP tool provider using your `mcp_config.json`
-5. The agent will automatically discover `oci_audit_mv` and `oci_logging_mv` as available tools
+4. Add both MCP servers using your `mcp_config.json`
+5. The agent will automatically discover `oci_audit_mv`, `oci_logging_mv`, and `agent_actions_mv` as query tools, and `suspend_principal` as the write action
 
 **Suggested system prompt:**
 
 ```
 You are an OCI operations assistant with access to real-time data from an OCI tenancy.
 
-You have two tools available:
+You have four tools available:
 - oci_audit_mv: real-time feed of audit events — API calls, policy changes, resource modifications, identity actions
 - oci_logging_mv: real-time feed of OCI Functions invocation logs — what functions ran, what they logged, and any errors
+- agent_actions_mv: log of actions you have taken this session — query this to verify what you have already done
+- suspend_principal: suspends an OCI principal by adding them to the restricted-access IAM group
 
 When answering questions:
 - Always query with a recent time window (last 15–30 minutes unless asked otherwise)
@@ -134,18 +175,26 @@ When answering questions:
 - For incident questions, use besttraceid to correlate audit events with function logs
 - Be specific: name principals, function IDs, timestamps, and status codes in your answers
 - If you don't find relevant events in the time window, say so and suggest widening the window
+
+When taking action:
+- Only call suspend_principal after you have identified the responsible principal from oci_audit_mv or oci_logging_mv
+- State your reasoning explicitly before acting — name the principal, the evidence, and the time window
+- After suspending a principal, verify the action by querying agent_actions_mv and confirm status = 'confirmed'
+- Before suspending a principal a second time, query agent_actions_mv to confirm you have not already done so
 ```
 
 ---
 
 ## Adapting this to your environment
 
-The two streams in this repo are a starting point, not a prescription. Your environment likely has different services, log groups, and questions that matter. Some directions to take it further:
+The streams and tools in this repo are a starting point, not a prescription. Some directions to take it further:
 
 - **Add more log sources** — extend `02_raw_streams.sql` to include API Gateway logs, VCN flow logs, or custom application logs
 - **Narrow the filter** — modify the `WHERE` clause in `03_enriched_streams.sql` to focus on specific event types or compartments
 - **Add derived fields** — extend the `SELECT` in `03_enriched_streams.sql` with additional `REGEXP_EXTRACT` or `COALESCE` logic specific to your naming conventions
 - **Add more views** — create additional materialized views in `04_materialized_views.sql` focused on specific use cases (e.g. a view filtered to failed events only, or scoped to a single application)
+- **Add more write actions** — follow the `suspend_principal` pattern to add other OCI Function-backed tools (e.g. revoke a token, quarantine a resource, open a PagerDuty incident)
+- **Join agent actions with operational data** — because `agent_actions_mv` lives in the same platform, you can write DeltaStream SQL that joins it against `oci_audit_mv` to correlate agent interventions with the tenancy events that triggered them
 
 The architecture is the same regardless of what you put in the streams.
 
@@ -172,6 +221,17 @@ The architecture is the same regardless of what you put in the streams.
 - Confirm `DELTASTREAM_RELATIONS` in `mcp_config.json` matches the exact view names
 - Verify the database and schema names are correct
 - Check that the DeltaStream API token has read access to the views
+
+**suspend_principal returning an error**
+- Verify `OCI_SUSPEND_FUNCTION_ENDPOINT` is the full invoke URL (not the resource OCID)
+- Confirm the OCI Function is deployed and in "Active" state
+- Check that the auth token in `OCI_FUNCTION_AUTH_TOKEN` has not expired
+- Confirm the IAM group the function adds principals to exists and has an attached zero-policy
+
+**agent_actions_mv showing no data after a suspension**
+- Confirm the `mcp_agent_actions` Kafka topic exists in your OCI Streaming for Apache Kafka cluster
+- Verify the Kafka credentials in `mcp_config.json` match those used in `01_store.sql` for `oci_streaming_kafka`
+- Check that `05_agent_actions_stream.sql` was run after the topic existed
 
 ---
 
