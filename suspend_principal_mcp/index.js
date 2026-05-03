@@ -220,7 +220,7 @@ if (MCP_TRANSPORT === 'http') {
   await server.connect(transport);
 
   const httpServer = http.createServer(async (req, res) => {
-    if (req.url !== '/mcp') {
+    if (req.url !== '/mcp' && req.url !== '/') {
       res.statusCode = 404;
       res.end('Not found');
       return;
