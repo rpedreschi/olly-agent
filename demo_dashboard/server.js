@@ -18,6 +18,7 @@ const {
   AGENT_ACTIONS_TOPIC = 'mcp_agent_actions',
   AUDIT_TOPIC         = 'mcp-oci-audit',
   PORT                = '3000',
+  KAFKA_SASL_MECHANISM = 'scram-sha-512',
 } = process.env;
 
 for (const [name, val] of Object.entries({ KAFKA_BOOTSTRAP, KAFKA_SASL_USERNAME, KAFKA_SASL_PASSWORD })) {
@@ -76,10 +77,12 @@ httpServer.listen(PORT, () => {
 
 const kafka = new Kafka({
   clientId: 'demo-dashboard',
-  brokers:  [KAFKA_BOOTSTRAP],
+  brokers: KAFKA_BOOTSTRAP.split(',')
+    .map((b) => b.trim().replace(/^\[([^\]]+)\]\(https?:\/\/[^)]+\)/, '$1'))
+    .filter(Boolean),
   ssl:      true,
   sasl: {
-    mechanism: 'scram-sha-512',
+    mechanism: KAFKA_SASL_MECHANISM,
     username:  KAFKA_SASL_USERNAME,
     password:  KAFKA_SASL_PASSWORD,
   },
