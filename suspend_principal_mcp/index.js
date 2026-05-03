@@ -238,7 +238,15 @@ if (MCP_TRANSPORT === 'http') {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : undefined;
-    await transport.handleRequest(req, res, body);
+    try {
+      await transport.handleRequest(req, res, body);
+    } catch (err) {
+      process.stderr.write(`MCP request error: ${err.stack || err.message || err}\n`);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.end(`Internal error: ${err.message}`);
+      }
+    }
   });
 
   httpServer.listen(Number(MCP_HTTP_PORT), () => {
