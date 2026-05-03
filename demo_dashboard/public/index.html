@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OCI Security Agent — Live</title>
+<link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -302,19 +303,27 @@
 
   <div class="columns">
 
-    <!-- Left: Audit anomalies -->
+    <!-- Left: Agent chat (iframe to OpenAI Agent Builder share URL) -->
     <div class="panel">
       <div class="panel-header">
-        <span class="panel-title">Suspicious Activity</span>
-        <span class="count-badge" id="anomalyCount">0</span>
+        <span class="panel-title">Agent Chat</span>
+        <span class="count-badge" id="anomalyCount" style="display:none">0</span>
       </div>
-      <div class="feed" id="anomalyFeed">
-        <div class="empty-state" id="anomalyEmpty">
-          <span class="icon">🔍</span>
-          Watching for 4xx / 5xx audit events…
+      <div id="chatContainer" style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
+        <iframe id="chatFrame"
+                style="flex:1; width:100%; border:0; background:var(--surface);"
+                allow="clipboard-write; clipboard-read"></iframe>
+        <div id="chatHint" style="display:none; padding:24px; color:var(--muted); font-size:13px; line-height:1.6;">
+          <p>Pass <code style="color:var(--text)">?chat=&lt;your-agent-url&gt;</code> in the URL to embed your agent here.</p>
+          <p style="margin-top:12px">Example:<br>
+            <code style="color:var(--text); font-size:11px;">http://localhost:3000/?chat=https://platform.openai.com/agents/asst_xxx</code>
+          </p>
         </div>
       </div>
     </div>
+    <!-- Audit anomaly feed elements kept for compatibility with existing JS -->
+    <div id="anomalyFeed" style="display:none"></div>
+    <div id="anomalyEmpty" style="display:none"></div>
 
     <!-- Right: Agent actions (the money shot) -->
     <div class="panel">
@@ -334,6 +343,20 @@
 </div>
 
 <script>
+  // ── Chat iframe ─────────────────────────────────────────
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const chatUrl = params.get('chat');
+    const frame = document.getElementById('chatFrame');
+    const hint  = document.getElementById('chatHint');
+    if (chatUrl) {
+      frame.src = chatUrl;
+    } else {
+      frame.style.display = 'none';
+      hint.style.display = 'block';
+    }
+  })();
+
   // ── Counters ────────────────────────────────────────────
   let anomalyCount = 0;
   let actionCount  = 0;
