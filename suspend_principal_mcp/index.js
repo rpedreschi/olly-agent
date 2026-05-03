@@ -43,7 +43,9 @@ if (MOCK_MODE) {
 
 const kafka = new Kafka({
   clientId: 'suspend-principal-mcp',
-  brokers: KAFKA_BOOTSTRAP.split(',').map((b) => b.trim()).filter(Boolean),
+  brokers: KAFKA_BOOTSTRAP.split(',')
+    .map((b) => b.trim().replace(/^\[([^\]]+)\]\(https?:\/\/[^)]+\)/, '$1'))
+    .filter(Boolean),
   ssl: true,
   sasl: {
     mechanism: 'scram-sha-512',
