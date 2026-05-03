@@ -23,6 +23,8 @@ const {
   MCP_TRANSPORT = 'stdio',
   MCP_HTTP_PORT = '3001',
   MCP_HTTP_AUTH_TOKEN,
+  DASHBOARD_BROADCAST_URL,
+  DASHBOARD_BROADCAST_AUTH_TOKEN,
 } = process.env;
 
 const MOCK_MODE = MOCK_OCI_FUNCTION === 'true';
@@ -192,6 +194,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     auditWarning =
       `\n\nAudit warning: the action was executed but the record could not be ` +
       `written to the ${AGENT_ACTIONS_TOPIC} topic: ${err.message}`;
+  }
+
+  if (DASHBOARD_BROADCAST_URL) {
+    fetch(DASHBOARD_BROADCAST_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(DASHBOARD_BROADCAST_AUTH_TOKEN
+          ? { Authorization: `Bearer ${DASHBOARD_BROADCAST_AUTH_TOKEN}` }
+          : {}),
+      },
+      body: JSON.stringify({ type: 'action', ...record }),
+    }).catch((err) => process.stderr.write(`Dashboard broadcast failed: ${err.message}\n`));
   }
 
   return {
