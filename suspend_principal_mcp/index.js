@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { Kafka, logLevel } from 'kafkajs';
 import { randomUUID } from 'crypto';
+import http from 'http';
 
 // ---------------------------------------------------------------------------
 // Configuration — all values come from mcp_config.json env block
@@ -18,6 +20,9 @@ const {
   AGENT_ACTIONS_TOPIC = 'mcp_agent_actions',
   MOCK_OCI_FUNCTION = 'false',
   KAFKA_SASL_MECHANISM = 'scram-sha-512',
+  MCP_TRANSPORT = 'stdio',
+  MCP_HTTP_PORT = '3001',
+  MCP_HTTP_AUTH_TOKEN,
 } = process.env;
 
 const MOCK_MODE = MOCK_OCI_FUNCTION === 'true';
@@ -210,5 +215,36 @@ const shutdown = async () => {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+if (MCP_TRANSPORT === 'http') {
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  await server.connect(transport);
+
+  const httpServer = http.createServer(async (req, res) => {
+    if (req.url !== '/mcp') {
+      res.statusCode = 404;
+      res.end('Not found');
+      return;
+    }
+
+    if (MCP_HTTP_AUTH_TOKEN) {
+      const auth = req.headers['authorization'];
+      if (auth !== `Bearer ${MCP_HTTP_AUTH_TOKEN}`) {
+        res.statusCode = 401;
+        res.end('Unauthorized');
+        return;
+      }
+    }
+
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : undefined;
+    await transport.handleRequest(req, res, body);
+  });
+
+  httpServer.listen(Number(MCP_HTTP_PORT), () => {
+    process.stderr.write(`suspend-principal MCP: HTTP transport listening on :${MCP_HTTP_PORT} at /mcp\n`);
+  });
+} else {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
