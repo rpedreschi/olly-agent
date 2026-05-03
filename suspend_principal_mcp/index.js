@@ -216,9 +216,6 @@ process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
 if (MCP_TRANSPORT === 'http') {
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  await server.connect(transport);
-
   const httpServer = http.createServer(async (req, res) => {
     if (req.url !== '/mcp' && req.url !== '/') {
       res.statusCode = 404;
@@ -238,7 +235,11 @@ if (MCP_TRANSPORT === 'http') {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : undefined;
+
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on('close', () => transport.close());
     try {
+      await server.connect(transport);
       await transport.handleRequest(req, res, body);
     } catch (err) {
       process.stderr.write(`MCP request error: ${err.stack || err.message || err}\n`);
