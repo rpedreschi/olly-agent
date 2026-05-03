@@ -17,6 +17,7 @@ const {
   KAFKA_SASL_PASSWORD,
   AGENT_ACTIONS_TOPIC = 'mcp_agent_actions',
   MOCK_OCI_FUNCTION = 'false',
+  KAFKA_SASL_MECHANISM = 'scram-sha-512',
 } = process.env;
 
 const MOCK_MODE = MOCK_OCI_FUNCTION === 'true';
@@ -48,7 +49,7 @@ const kafka = new Kafka({
     .filter(Boolean),
   ssl: true,
   sasl: {
-    mechanism: 'scram-sha-512',
+    mechanism: KAFKA_SASL_MECHANISM,
     username: KAFKA_SASL_USERNAME,
     password: KAFKA_SASL_PASSWORD,
   },
