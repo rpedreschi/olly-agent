@@ -394,7 +394,8 @@
         });
         const data = await r.json();
         if (!r.ok) {
-          pending.textContent = `Error: ${data.error || JSON.stringify(data)}`;
+          const msg = data?.error?.message || data?.error || JSON.stringify(data);
+          pending.textContent = `Error: ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`;
           pending.style.color = 'var(--red)';
         } else {
           pending.textContent = data.text || '(no response)';

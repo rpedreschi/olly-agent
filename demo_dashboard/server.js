@@ -159,6 +159,7 @@ const httpServer = http.createServer(async (req, res) => {
       });
       const data = await upstream.json();
       if (!upstream.ok) {
+        process.stderr.write(`OpenAI error ${upstream.status}: ${JSON.stringify(data)}\n`);
         res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(data));
         return;
